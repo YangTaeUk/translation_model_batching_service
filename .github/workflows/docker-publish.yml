@@ -2,8 +2,8 @@ name: Build and Push Gemma Service
 
 on:
   push:
-    branches: [ "main" ]  # main 브랜치에 푸시하면 자동 실행
-  workflow_dispatch:      # 수동 실행 버튼 활성화
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build-and-push:
@@ -12,6 +12,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # [추가됨] 디스크 공간 확보 단계 (약 10GB~ 이상 확보)
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space-action@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
