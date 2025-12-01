@@ -2,13 +2,16 @@ version: '3.8'
 
 services:
   gemma-service:
-    # Docker Hub ID를 본인 것으로 수정하세요!
-    image: williamyang1992/gemma-3-service:latest
+    # 로컬 Dockerfile에서 빌드
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gemma-3-service:local
     container_name: gemma-3-server
     restart: always
     runtime: nvidia
     environment:
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
       - HF_HOME=/root/.cache/huggingface
       # 드라이버 버전 우회
       # - NVIDIA_DISABLE_REQUIRE=1
@@ -18,7 +21,15 @@ services:
     ports:
       - "8000:8000"
     ipc: host
-    
-    # Dockerfile에 CMD(기본값)가 있으므로 여기선 command 생략 가능.
-    # 설정을 바꾸고 싶을 때만 아래 주석을 풀고 사용하세요.
-    # command: google/gemma-3-12b-it --dtype half ...
+
+    # RTX 3090 24GB: 12B 모델은 양자화 필수
+    # BitsAndBytes 4bit 양자화로 ~6GB로 압축 → 동시처리 여유 확보
+    command: >
+      google/gemma-3-12b-it
+      --dtype bfloat16
+      --quantization bitsandbytes
+      --load-format bitsandbytes
+      --tensor-parallel-size 1
+      --gpu-memory-utilization 0.90
+      --max-model-len 4096
+      --trust-remote-code

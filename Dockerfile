@@ -14,9 +14,11 @@ ENTRYPOINT ["vllm", "serve"]
 # 4. 기본 실행 옵션 (CMD)
 # 사용자가 별도 옵션 없이 'docker run'만 해도 이 설정으로 돌아갑니다.
 # RTX 3090 (24GB) 환경에 최적화된 기본값입니다.
+# NOTE: Gemma 3는 float16을 지원하지 않음 → bfloat16 사용
+# NOTE: 24GB VRAM에서 12B 모델 로드 시 KV cache 공간 확보를 위해 max-model-len 축소
 CMD ["google/gemma-3-12b-it", \
-     "--dtype", "half", \
+     "--dtype", "bfloat16", \
      "--tensor-parallel-size", "1", \
      "--gpu-memory-utilization", "0.95", \
-     "--max-model-len", "4096", \
+     "--max-model-len", "2048", \
      "--trust-remote-code"]
