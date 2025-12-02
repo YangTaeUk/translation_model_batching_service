@@ -1,35 +1,64 @@
 version: '3.8'
 
+# =============================================================================
+# Translation Model Batching Service - Local Development
+# =============================================================================
+# Usage:
+#   1. Copy .env.example to .env: cp .env.example .env
+#   2. Fill in your HuggingFace token and other settings
+#   3. Run: docker-compose up -d
+# =============================================================================
+
 services:
   gemma-service:
-    # 로컬 Dockerfile에서 빌드
+    # Build from local Dockerfile
     build:
       context: .
       dockerfile: Dockerfile
-    image: gemma-3-service:local
-    container_name: gemma-3-server
+    image: ${DOCKER_IMAGE:-gemma-3-service}:local
+    container_name: ${CONTAINER_NAME:-gemma-3-server}
     restart: always
     runtime: nvidia
+
     environment:
+      # HuggingFace token from .env file (NEVER hardcode!)
       - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
       - HF_HOME=/root/.cache/huggingface
-      # 드라이버 버전 우회
+      # Optional: Uncomment to bypass driver version check
       # - NVIDIA_DISABLE_REQUIRE=1
+
     volumes:
-      # 호스트의 캐시 경로를 꼭 확인하고 맞춰주세요
-      - /mnt/data2/hf_cache:/root/.cache/huggingface
+      # Mount host cache for model persistence
+      - ${HF_CACHE_PATH:-/mnt/data2/hf_cache}:/root/.cache/huggingface
+
     ports:
-      - "8000:8000"
+      - "${VLLM_PORT:-8000}:8000"
+
     ipc: host
 
-    # RTX 3090 24GB: 12B 모델은 양자화 필수
-    # BitsAndBytes 4bit 양자화로 ~6GB로 압축 → 동시처리 여유 확보
+    # vLLM serve command with configurable parameters
+    # RTX 3090 24GB: BitsAndBytes 4-bit quantization required for 12B model
     command: >
-      google/gemma-3-12b-it
-      --dtype bfloat16
-      --quantization bitsandbytes
+      ${MODEL_NAME:-google/gemma-3-12b-it}
+      --dtype ${MODEL_DTYPE:-bfloat16}
+      --quantization ${QUANTIZATION:-bitsandbytes}
       --load-format bitsandbytes
-      --tensor-parallel-size 1
-      --gpu-memory-utilization 0.90
-      --max-model-len 4096
+      --tensor-parallel-size ${TENSOR_PARALLEL_SIZE:-1}
+      --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION:-0.90}
+      --max-model-len ${MAX_MODEL_LEN:-4096}
       --trust-remote-code
+
+    # Health check for service monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # Model loading takes time
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"

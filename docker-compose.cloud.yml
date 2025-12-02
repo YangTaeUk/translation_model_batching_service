@@ -1,0 +1,105 @@
+version: '3.8'
+
+# =============================================================================
+# Translation Model Batching Service - Cloud Deployment
+# =============================================================================
+# This configuration pulls pre-built image from DockerHub.
+# Use this on external cloud servers with GPU support.
+#
+# Usage:
+#   1. Copy .env.example to .env and configure
+#   2. Set DOCKERHUB_USERNAME in .env
+#   3. Run: docker-compose -f docker-compose.cloud.yml up -d
+#
+# Requirements:
+#   - NVIDIA GPU with CUDA support
+#   - Docker with NVIDIA runtime
+#   - Sufficient GPU memory (24GB+ recommended)
+# =============================================================================
+
+services:
+  gemma-service:
+    # Pull from DockerHub (built by GitHub Actions CI/CD)
+    image: ${DOCKERHUB_USERNAME}/gemma-3-service:${IMAGE_TAG:-latest}
+    container_name: ${CONTAINER_NAME:-gemma-3-server}
+    restart: always
+    runtime: nvidia
+
+    environment:
+      # HuggingFace token (required for gated models)
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
+      - HF_HOME=/root/.cache/huggingface
+      # GPU configuration
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      # Optional: Uncomment for driver compatibility issues
+      # - NVIDIA_DISABLE_REQUIRE=1
+
+    volumes:
+      # Model cache - persists downloaded models between restarts
+      - ${HF_CACHE_PATH:-./hf_cache}:/root/.cache/huggingface
+
+    ports:
+      - "${VLLM_PORT:-8000}:8000"
+
+    ipc: host
+
+    # vLLM configuration - adjust based on your GPU
+    command: >
+      ${MODEL_NAME:-google/gemma-3-12b-it}
+      --dtype ${MODEL_DTYPE:-bfloat16}
+      --quantization ${QUANTIZATION:-bitsandbytes}
+      --load-format bitsandbytes
+      --tensor-parallel-size ${TENSOR_PARALLEL_SIZE:-1}
+      --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION:-0.90}
+      --max-model-len ${MAX_MODEL_LEN:-4096}
+      --trust-remote-code
+
+    # Health monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s  # Allow time for model download on first run
+
+    # Resource limits (optional - uncomment and adjust as needed)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200m"
+        max-file: "5"
+
+# =============================================================================
+# Optional: Reverse Proxy Configuration (uncomment if needed)
+# =============================================================================
+#   traefik:
+#     image: traefik:v2.10
+#     container_name: traefik
+#     restart: always
+#     ports:
+#       - "80:80"
+#       - "443:443"
+#     volumes:
+#       - /var/run/docker.sock:/var/run/docker.sock:ro
+#       - ./traefik:/etc/traefik
+#     command:
+#       - "--api.dashboard=true"
+#       - "--providers.docker=true"
+#       - "--entrypoints.web.address=:80"
+#       - "--entrypoints.websecure.address=:443"
+
+# =============================================================================
+# Volume definitions
+# =============================================================================
+volumes:
+  hf_cache:
+    driver: local
